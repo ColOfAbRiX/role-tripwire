@@ -1,0 +1,26 @@
+---
+galaxy_info:
+  author: Fabrizio Colonna <colofabrix@tin.it>
+  description: Installs Tripwire for File Sytem Monitoring
+  company:
+  license:
+  min_ansible_version: 2.1.0
+  #
+  # Below are all platforms currently available. Just uncomment
+  # the ones that apply to your role. If you don't see your
+  # platform on this list, let us know and we'll get it added!
+  #
+  platforms:
+    - name: EL
+      versions:
+        - 7
+  #
+  # Below are all categories currently available. Just as with
+  # the platforms above, uncomment those that apply to your role.
+  #
+  categories:
+    - system
+    - monitoring
+    - security
+
+dependencies: []

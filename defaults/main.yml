@@ -1,0 +1,777 @@
+---
+
+# Version to install:
+# - Leave empty for latest version, if not already installed;
+# - "latest" to updated to latest version;
+# - "<version>" to install a specific version
+tripwire_version: ''
+
+# Domain of the machines
+domain: example.com
+
+# If set it will run a check as first thing
+tripwire_run_first: true
+
+# Tripwire Site Passphrase
+tripwire_site_password: Passw0rd
+
+# Tripwire Local Passphrase
+tripwire_local_password: Passw0rd
+
+# Enable daily tripwire checks and report
+tripwire_daily_check: false
+
+# If set to true, the Tripwire keys will be cleared at every run
+tripwire_reset_keys: false
+
+#
+# twcfg.txt
+#
+
+tw_twcfg_root:          '/usr/sbin'
+tw_twcfg_polfile:       '/etc/tripwire/tw.pol'
+tw_twcfg_dbfile:        '/var/lib/tripwire/$(HOSTNAME).twd'
+tw_twcfg_reportfile:    '/var/lib/tripwire/report/$(HOSTNAME)-$(DATE).twr'
+tw_twcfg_sitekeyfile:   '/etc/tripwire/site.key'
+tw_twcfg_localkeyfile:  '/etc/tripwire/$(HOSTNAME)-local.key'
+tw_twcfg_editor:        '/bin/vim'
+tw_twcfg_lateprompting: 'false'
+tw_twcfg_loosedirectorychecking: false
+tw_twcfg_mailnoviolations: true
+tw_twcfg_emailreportlevel: '3'
+tw_twcfg_reportlevel:   '3'
+tw_twcfg_mailmethod:    'SENDMAIL'
+tw_twcfg_syslogreporting: 'false'
+tw_twcfg_mailprogram:   '/usr/sbin/sendmail -oi -t'
+tw_twcfg_globalemail:   "admin@{{ domain }}"
+
+#
+# twpol.txt
+#
+
+tw_twpol_sections:
+
+ # Global Variable Definitions
+
+ - name: GLOBAL
+   content:
+     - { name: 'TWROOT',   value: '/usr/sbin' }
+     - { name: 'TWBIN',    value: '/usr/sbin' }
+     - { name: 'TWPOL',    value: '/etc/tripwire' }
+     - { name: 'TWDB',     value: '/var/lib/tripwire' }
+     - { name: 'TWSKEY',   value: '/etc/tripwire' }
+     - { name: 'TWLKEY',   value: '/etc/tripwire' }
+     - { name: 'TWREPORT', value: '/var/lib/tripwire/report' }
+     - { name: 'HOSTNAME', value: '{{ ansible_fqdn }}' }
+
+ - name: FS
+   content:
+    # Critical files that cannot change
+    - { name: 'SEC_CRIT',      value: '$(IgnoreNone)-SHa' }
+    # Binaries with the SUID or SGID flags set
+    - { name: 'SEC_SUID',      value: '$(IgnoreNone)-SHa' }
+    # Binaries that should not change
+    - { name: 'SEC_BIN',       value: '$(ReadOnly)' }
+    # Config files that are changed infrequently but accessed often
+    - { name: 'SEC_CONFIG',    value: '$(Dynamic)' }
+    # Files that grow, but that should never change ownership
+    - { name: 'SEC_LOG',       value: '$(Growing)' }
+    # Directories that should never change permission or ownership
+    - { name: 'SEC_INVARIANT', value: '+tpug' }
+    # Non-critical files that are of minimal security impact
+    - { name: 'SIG_LOW',       value: 33 }
+    # Non-critical files that are of significant security impact
+    - { name: 'SIG_MED',       value: 66 }
+    # Critical files that are significant points of vulnerability
+    - { name: 'SIG_HI',        value: 100 }
+
+tw_twpol_rules:
+
+
+ # Tripwire Binaries
+
+ - rulename: "Tripwire Binaries"
+   severity: '$(SIG_HI)'
+   content:
+    - { object: '$(TWBIN)/siggen',   mask: '$(SEC_BIN)' }
+    - { object: '$(TWBIN)/tripwire', mask: '$(SEC_BIN)' }
+    - { object: '$(TWBIN)/twadmin',  mask: '$(SEC_BIN)' }
+    - { object: '$(TWBIN)/twprint',  mask: '$(SEC_BIN)' }
+
+
+ # Tripwire Data Files - Configuration Files, Policy Files, Keys, Reports, Databases
+
+ - rulename: "Tripwire Data Files"
+   severity: '$(SIG_HI)'
+   content:
+
+   # NOTE: We remove the inode attribute because when Tripwire creates a backup,
+   # it does so by renaming the old file and creating a new one (which will
+   # have a new inode number).  Inode is left turned on for keys, which shouldn't
+   # ever change.
+
+   # NOTE: The first integrity check triggers this rule and each integrity check
+   # afterward triggers this rule until a database update is run, since the
+   # database file does not exist before that point.
+
+   - { object: '$(TWDB)',                         mask: '$(SEC_CONFIG) -i' }
+   - { object: '$(TWPOL)/tw.pol',                 mask: '$(SEC_BIN) -i' }
+   - { object: '$(TWPOL)/tw.cfg',                 mask: '$(SEC_BIN) -i' }
+   - { object: '$(TWLKEY)/$(HOSTNAME)-local.key', mask: '$(SEC_BIN)' }
+   - { object: '$(TWSKEY)/site.key',              mask: '$(SEC_BIN)' }
+
+   #don't scan the individual reports
+   - { object: '$(TWREPORT)', mask: '$(SEC_CONFIG)', attributes: [ 'recurse = 0' ] }
+
+
+ # Commonly accessed directories that should remain static with  regards
+ # to owner and group.
+
+ - rulename: "Invariant Directories"
+   severity: '$(SIG_MED)'
+   content:
+
+    - { object: '/',     mask: '$(SEC_INVARIANT)', attributes: [ 'recurse = 0' ] }
+    - { object: '/home', mask: '$(SEC_INVARIANT)', attributes: [ 'recurse = 0' ] }
+    - { object: '/etc',  mask: '$(SEC_INVARIANT)', attributes: [ 'recurse = 0' ] }
+
+
+ # File System and Disk Administration Programs.
+
+ - rulename: "File System and Disk Administraton Programs"
+   severity: '$(SIG_HI)'
+   content:
+
+    - { object: '/sbin/accton',            mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/badblocks',         mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/convertquota',      mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/dosfsck',           mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/debugfs',           mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/e2fsck',            mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/e2label',           mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/fdisk',             mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/fsck',              mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/fsck.ext2',         mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/fsck.ext3',         mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/fsck.minix',        mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/fsck.msdos',        mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/fsck.vfat',         mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/lvchange',          mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/lvcreate',          mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/lvdisplay',         mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/lvextend',          mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/lvmchange',         mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/lvmcreate_initrd',  mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/lvmdiskscan',       mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/lvmsadc',           mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/lvmsar',            mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/lvreduce',          mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/lvremove',          mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/lvrename',          mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/lvscan',            mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/mkdosfs',           mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/mke2fs',            mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/mkfs',              mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/mkfs.bfs',          mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/mkfs.ext2',         mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/mkfs.minix',        mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/mkfs.msdos',        mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/mkfs.vfat',         mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/mkpv',              mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/mkswap',            mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/mtx',               mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/pam_console_apply', mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/parted',            mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/pvchange',          mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/pvcreate',          mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/pvdata',            mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/pvdisplay',         mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/pvmove',            mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/pvscan',            mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/quotacheck',        mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/quotaon',           mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/resize2fs',         mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/sfdisk',            mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/tune2fs',           mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/update',            mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vgcfgbackup',       mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vgcfgrestore',      mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vgchange',          mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vgck',              mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vgcreate',          mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vgdisplay',         mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vgexport',          mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vgextend',          mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vgimport',          mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vgmerge',           mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vgmknodes',         mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vgreduce',          mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vgremove',          mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vgrename',          mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vgscan',            mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vgsplit',           mask: '$(SEC_CRIT)' }
+    - { object: '/bin/chgrp',              mask: '$(SEC_CRIT)' }
+    - { object: '/bin/chmod',              mask: '$(SEC_CRIT)' }
+    - { object: '/bin/chown',              mask: '$(SEC_CRIT)' }
+    - { object: '/bin/cp',                 mask: '$(SEC_CRIT)' }
+    - { object: '/bin/cpio',               mask: '$(SEC_CRIT)' }
+    - { object: '/bin/mount',              mask: '$(SEC_CRIT)' }
+    - { object: '/bin/umount',             mask: '$(SEC_CRIT)' }
+    - { object: '/bin/mkdir',              mask: '$(SEC_CRIT)' }
+    - { object: '/bin/mknod',              mask: '$(SEC_CRIT)' }
+    - { object: '/bin/mktemp',             mask: '$(SEC_CRIT)' }
+    - { object: '/bin/rm',                 mask: '$(SEC_CRIT)' }
+    - { object: '/bin/rmdir',              mask: '$(SEC_CRIT)' }
+    - { object: '/bin/touch',              mask: '$(SEC_CRIT)' }
+
+
+ # Kernel Administration Programs.
+
+ - rulename: "Kernel Administration Programs"
+   severity: '$(SIG_HI)'
+   content:
+
+    - { object: '/sbin/ctrlaltdel', mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/depmod',     mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/insmod',     mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/ldconfig',   mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/modinfo',    mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/nuactlun',   mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/nuscsitcpd', mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/pivot_root', mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/sysctl',     mask: '$(SEC_CRIT)' }
+
+
+ # Networking Programs.
+
+ - rulename: "Networking Programs"
+   severity: '$(SIG_HI)'
+   content:
+
+    - { object: '/etc/sysconfig/network-scripts/ifdown',                 mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifdown-ippp',            mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifdown-ipv6',            mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifdown-isdn',            mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifdown-post',            mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifdown-ppp',             mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifdown-sit',             mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifup',                   mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifup-aliases',           mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifup-ippp',              mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifup-ipv6',              mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifup-isdn',              mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifup-plip',              mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifup-plusb',             mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifup-post',              mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifup-ppp',               mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifup-routes',            mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifup-sit',               mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/ifup-wireless',          mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/network-functions',      mask: '$(SEC_CRIT)' }
+    - { object: '/etc/sysconfig/network-scripts/network-functions-ipv6', mask: '$(SEC_CRIT)' }
+    - { object: '/bin/ping',                                             mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/agetty',                                          mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/arp',                                             mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/arping',                                          mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/dhclient',                                        mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/ether-wake',                                      mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/getty',                                           mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/ifcfg',                                           mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/ifconfig',                                        mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/ifdown',                                          mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/ifenslave',                                       mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/ifup',                                            mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/ip',                                              mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/ip6tables',                                       mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/ipfwadm',                                         mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/ipmaddr',                                         mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/iptables',                                        mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/iptables-restore',                                mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/iptables-save',                                   mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/iptunnel',                                        mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/ipvsadm',                                         mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/ipvsadm-restore',                                 mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/ipvsadm-save',                                    mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/nameif',                                          mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/netreport',                                       mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/plipconfig',                                      mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/ppp-watch',                                       mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/rarp',                                            mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/route',                                           mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/slattach',                                        mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/tc',                                              mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/uugetty',                                         mask: '$(SEC_CRIT)' }
+
+
+ # System Administration Programs.
+
+ - rulename: "System Administration Programs"
+   severity: '$(SIG_HI)'
+   content:
+
+    - { object: '/sbin/chkconfig',    mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/fuser',        mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/halt',         mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/init',         mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/install-info', mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/killall5',     mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/remadmin',     mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/rpc.statd',    mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/rpcdebug',     mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/service',      mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/shutdown',     mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/sulogin',      mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/swapon',       mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/unix_chkpwd',  mask: '$(SEC_CRIT)' }
+    - { object: '/bin/pwd',           mask: '$(SEC_CRIT)' }
+    - { object: '/bin/uname',         mask: '$(SEC_CRIT)' }
+
+
+ # Hardware and Device Control Programs.
+
+ - rulename: "Hardware and Device Control Programs"
+   severity: '$(SIG_HI)'
+   content:
+
+    - { object: '/bin/setserial', mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/blockdev', mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/cbq',      mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/hwclock',  mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/isapnp',   mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/kbdrate',  mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/losetup',  mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/lspci',    mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/mii-tool', mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/pnpdump',  mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/pump',     mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/setpci',   mask: '$(SEC_CRIT)' }
+
+
+ # System Information Programs.
+
+ - rulename: "System Information Programs"
+   severity: '$(SIG_HI)'
+   content:
+
+    - { object: '/sbin/consoletype', mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/runlevel',    mask: '$(SEC_CRIT)' }
+
+
+ # Application Information Programs.
+
+ - rulename: "Application Information Programs"
+   severity: '$(SIG_HI)'
+   content:
+
+#    - { object: '/sbin/genksyms.old', mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/rtmon',        mask: '$(SEC_CRIT)' }
+
+
+ # Shell Related Programs.
+
+ - rulename: "Shell Related Programs"
+   severity: '$(SIG_HI)'
+   content: []
+
+
+ # OS Utilities.
+
+ - rulename: "Operating System Utilities"
+   severity: '$(SIG_HI)'
+   content:
+
+    - { object: '/bin/arch',         mask: '$(SEC_CRIT)' }
+    - { object: '/bin/basename',     mask: '$(SEC_CRIT)' }
+    - { object: '/bin/cat',          mask: '$(SEC_CRIT)' }
+#    - { object: '/bin/consolechars', mask: '$(SEC_CRIT)' }
+    - { object: '/bin/cut',          mask: '$(SEC_CRIT)' }
+    - { object: '/bin/date',         mask: '$(SEC_CRIT)' }
+    - { object: '/bin/dd',           mask: '$(SEC_CRIT)' }
+    - { object: '/bin/df',           mask: '$(SEC_CRIT)' }
+    - { object: '/bin/dmesg',        mask: '$(SEC_CRIT)' }
+    - { object: '/bin/echo',         mask: '$(SEC_CRIT)' }
+    - { object: '/bin/ed',           mask: '$(SEC_CRIT)' }
+    - { object: '/bin/egrep',        mask: '$(SEC_CRIT)' }
+    - { object: '/bin/false',        mask: '$(SEC_CRIT)' }
+    - { object: '/bin/fgrep',        mask: '$(SEC_CRIT)' }
+    - { object: '/bin/gawk',         mask: '$(SEC_CRIT)' }
+    - { object: '/bin/gettext',      mask: '$(SEC_CRIT)' }
+    - { object: '/bin/grep',         mask: '$(SEC_CRIT)' }
+    - { object: '/bin/gunzip',       mask: '$(SEC_CRIT)' }
+    - { object: '/bin/gzip',         mask: '$(SEC_CRIT)' }
+    - { object: '/bin/hostname',     mask: '$(SEC_CRIT)' }
+    - { object: '/bin/igawk',        mask: '$(SEC_CRIT)' }
+    - { object: '/bin/ipcalc',       mask: '$(SEC_CRIT)' }
+    - { object: '/bin/kill',         mask: '$(SEC_CRIT)' }
+    - { object: '/bin/ln',           mask: '$(SEC_CRIT)' }
+    - { object: '/bin/loadkeys',     mask: '$(SEC_CRIT)' }
+    - { object: '/bin/login',        mask: '$(SEC_CRIT)' }
+    - { object: '/bin/ls',           mask: '$(SEC_CRIT)' }
+    - { object: '/bin/mail',         mask: '$(SEC_CRIT)' }
+    - { object: '/bin/more',         mask: '$(SEC_CRIT)' }
+    - { object: '/bin/mv',           mask: '$(SEC_CRIT)' }
+    - { object: '/bin/netstat',      mask: '$(SEC_CRIT)' }
+    - { object: '/bin/nice',         mask: '$(SEC_CRIT)' }
+    - { object: '/bin/pgawk',        mask: '$(SEC_CRIT)' }
+    - { object: '/bin/ps',           mask: '$(SEC_CRIT)' }
+    - { object: '/bin/rpm',          mask: '$(SEC_CRIT)' }
+    - { object: '/bin/sed',          mask: '$(SEC_CRIT)' }
+    - { object: '/bin/sleep',        mask: '$(SEC_CRIT)' }
+    - { object: '/bin/sort',         mask: '$(SEC_CRIT)' }
+    - { object: '/bin/stty',         mask: '$(SEC_CRIT)' }
+    - { object: '/bin/su',           mask: '$(SEC_CRIT)' }
+    - { object: '/bin/sync',         mask: '$(SEC_CRIT)' }
+    - { object: '/bin/tar',          mask: '$(SEC_CRIT)' }
+    - { object: '/bin/true',         mask: '$(SEC_CRIT)' }
+    - { object: '/bin/usleep',       mask: '$(SEC_CRIT)' }
+    - { object: '/bin/vi',           mask: '$(SEC_CRIT)' }
+    - { object: '/bin/zcat',         mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/sln',         mask: '$(SEC_CRIT)' }
+    - { object: '/usr/bin/vimtutor', mask: '$(SEC_CRIT)' }
+
+
+ # Critical Utility Sym-Links.
+
+ - rulename: "Critical Utility Sym-Links"
+   severity: '$(SIG_HI)'
+   content:
+
+#    - { object: '/sbin/askrunlevel',          mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/clock',                mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/fixperm',              mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/fsconf',               mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/ipfwadm-wrapper',      mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/lsmod',                mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/mailconf',             mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/modprobe',             mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/netconf',              mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/pidof',                mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/poweroff',             mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/quotaoff',             mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/raidhotgenerateerror', mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/reboot',               mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/rmmod',                mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/swapoff',              mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/telinit',              mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/userconf',             mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/uucpconf',             mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/vregistry',            mask: '$(SEC_CRIT)' }
+    - { object: '/bin/awk',                   mask: '$(SEC_CRIT)' }
+    - { object: '/bin/csh',                   mask: '$(SEC_CRIT)' }
+    - { object: '/bin/dnsdomainname',         mask: '$(SEC_CRIT)' }
+    - { object: '/bin/domainname',            mask: '$(SEC_CRIT)' }
+    - { object: '/bin/ex',                    mask: '$(SEC_CRIT)' }
+    - { object: '/bin/gtar',                  mask: '$(SEC_CRIT)' }
+    - { object: '/bin/nisdomainname',         mask: '$(SEC_CRIT)' }
+    - { object: '/bin/red',                   mask: '$(SEC_CRIT)' }
+    - { object: '/bin/rvi',                   mask: '$(SEC_CRIT)' }
+    - { object: '/bin/rview',                 mask: '$(SEC_CRIT)' }
+    - { object: '/bin/view',                  mask: '$(SEC_CRIT)' }
+    - { object: '/bin/ypdomainname',          mask: '$(SEC_CRIT)' }
+
+
+ # Temporary directories.
+
+ - rulename: "Temporary directories"
+   recurse: false
+   severity: '$(SIG_LOW)'
+   content:
+
+    - { object: '/usr/tmp', mask: '$(SEC_INVARIANT)' }
+    - { object: '/var/tmp', mask: '$(SEC_INVARIANT)' }
+    - { object: '/tmp',     mask: '$(SEC_INVARIANT)' }
+
+
+ # Local files.
+
+ - rulename: "User binaries"
+   severity: '$(SIG_MED)'
+   content:
+
+    - { object: '/sbin',          mask: '$(SEC_BIN) (recurse = 1)' }
+    - { object: '/usr/bin',       mask: '$(SEC_BIN) (recurse = 1)' }
+    - { object: '/usr/sbin',      mask: '$(SEC_BIN) (recurse = 1)' }
+    - { object: '/usr/local/bin', mask: '$(SEC_BIN) (recurse = 1)' }
+
+
+ - rulename: "Shell Binaries"
+   severity: '$(SIG_HI)'
+   content:
+
+    - { object: '/bin/bash',     mask: '$(SEC_BIN)' }
+    - { object: '/bin/sh',       mask: '$(SEC_BIN)' }
+    - { object: '/bin/tcsh',     mask: '$(SEC_BIN)' }
+    - { object: '/sbin/nologin', mask: '$(SEC_BIN)' }
+
+ - rulename: "Security Control"
+   severity: '$(SIG_HI)'
+   content:
+
+    - { object: '/etc/group',               mask: '$(SEC_CRIT)' }
+    - { object: '/etc/security',            mask: '$(SEC_CRIT)' }
+#    - { object: '/var/spool/cron/crontabs', mask: '$(SEC_CRIT) } # Uncomment when this file exists
+
+# - rulename: "Boot Scripts"
+#   severity: '$(SIG_HI)'
+#   content:
+#
+#    - { object: '/etc/rc',            mask: '$(SEC_CONFIG)' }
+#    - { object: '/etc/rc.bsdnet',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/etc/rc.dt',         mask: '$(SEC_CONFIG)' }
+#    - { object: '/etc/rc.net',        mask: '$(SEC_CONFIG)' }
+#    - { object: '/etc/rc.net.serial', mask: '$(SEC_CONFIG)' }
+#    - { object: '/etc/rc.nfs',        mask: '$(SEC_CONFIG)' }
+#    - { object: '/etc/rc.powerfail',  mask: '$(SEC_CONFIG)' }
+#    - { object: '/etc/rc.tcpip',      mask: '$(SEC_CONFIG)' }
+#    - { object: '/etc/trcfmt.Z',      mask: '$(SEC_CONFIG)' }
+
+ - rulename: "Login Scripts"
+   severity: '$(SIG_HI)'
+   content:
+
+    - { object: '/etc/bashrc',      mask: '$(SEC_CONFIG)' }
+    - { object: '/etc/csh.cshrc',   mask: '$(SEC_CONFIG)' }
+    - { object: '/etc/csh.login',   mask: '$(SEC_CONFIG)' }
+    - { object: '/etc/inputrc',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/etc/tsh_profile', mask: '$(SEC_CONFIG) } #Uncomment when this file exists
+    - { object: '/etc/profile',     mask: '$(SEC_CONFIG)' }
+
+
+ # Libraries
+
+ - rulename: "Libraries"
+   severity: '$(SIG_MED)'
+   content:
+
+    - { object: '/usr/lib',         mask: '$(SEC_BIN)' }
+    - { object: '/usr/local/lib',   mask: '$(SEC_BIN)' }
+    - { object: '/usr/lib64',       mask: '$(SEC_BIN)' }
+    - { object: '/usr/local/lib64', mask: '$(SEC_BIN)' }
+
+
+ # Critical System Boot Files.
+ # These files are critical to a correct system boot.
+
+ - rulename: "Critical system boot files"
+   severity: '$(SIG_HI)'
+   content:
+
+    - { object: '/boot/module-info',   exclude: yes }
+    - { object: '/boot/System.map',    exclude: yes }
+    - { object: '/boot',               mask: '$(SEC_CRIT)' }
+    - { object: '/sbin/installkernel', mask: '$(SEC_CRIT)' }
+    # other boot files may exist.  Look for:
+#    - { object: '/ufsboot',            mask: '$(SEC_CRIT)' }
+#    - { object: '/sbin/devfsd',        mask: '$(SEC_CRIT)' }
+
+
+ # These files change every time the system boots.
+
+ - rulename: "System boot changes"
+   severity: '$(SIG_HI)'
+   content:
+
+    # Comes and goes on reboot.
+    - { object: '/var/run/ftp.pids-all',       exclude: yes }
+    - { object: '/root/.enlightenment',        exclude: yes }
+    - { object: '/dev/log',                    mask: '$(SEC_CONFIG)' }
+    # User ID may change on console login/logout.
+    - { object: '/dev/console',                mask: '$(SEC_CONFIG) -u' }
+    - { object: '/dev/tty1',                   mask: '$(SEC_CONFIG)' }
+    - { object: '/dev/tty2',                   mask: '$(SEC_CONFIG)' }
+    - { object: '/dev/tty3',                   mask: '$(SEC_CONFIG)' }
+    - { object: '/dev/tty4',                   mask: '$(SEC_CONFIG)' }
+    - { object: '/dev/tty5',                   mask: '$(SEC_CONFIG)' }
+    - { object: '/dev/tty6',                   mask: '$(SEC_CONFIG)' }
+    - { object: '/dev/urandom',                mask: '$(SEC_CONFIG)' }
+    - { object: '/dev/initctl',                mask: '$(SEC_CONFIG)' }
+    - { object: '/var/lock/subsys',            mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/amd',        mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/anacron',    mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/arpwatch',   mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/autofs',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/bcm5820',    mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/bgpd',       mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/bootparamd', mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/cWnn',       mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/dhcpd',      mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/firewall',   mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/freeWnn',    mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/gated',      mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/httpd',      mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/identd',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/innd',       mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/ipvsadm',    mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/irda',       mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/iscsi',      mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/isdn',       mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/kadmin',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/keytable',   mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/kprop',      mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/krb524',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/krb5kdc',    mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/kWnn',       mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/ldap',       mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/lpd',        mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/mars_nwe',   mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/mcserv',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/mysqld',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/named',      mask: '$(SEC_CONFIG)' }
+    - { object: '/var/lock/subsys/network',    mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/nfs',        mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/nscd',       mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/ospf6d',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/ospfd',      mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/pcmcia',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/postgresql', mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/pxe',        mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/radvd',      mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/rarpd',      mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/reconfig',   mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/rhnsd',      mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/ripd',       mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/ripngd',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/routed',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/rstatd',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/rusersd',    mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/rwalld',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/rwhod',      mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/smb',        mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/snmpd',      mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/squid',      mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/tux',        mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/tWnn',       mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/ups',        mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/vncserver',  mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/wine',       mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/ypbind',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/yppasswdd',  mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/ypserv',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/ypxfrd',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/lock/subsys/zebra',      mask: '$(SEC_CONFIG)' }
+    - { object: '/var/run',                    mask: '$(SEC_CONFIG)' }
+#    - { object: '/var/log',                    mask: '$(SEC_CONFIG)' }
+#    - { object: '/etc/ioctl.save',             mask: '$(SEC_CONFIG)' }
+    # Inode number changes
+    - { object: '/etc/issue.net',              mask: '$(SEC_CONFIG) -i' }
+    - { object: '/etc/issue',                  mask: '$(SEC_CONFIG)' }
+    # Inode number changes on any mount/unmount
+    - { object: '/etc/mtab',                   mask: '$(SEC_CONFIG) -i' }
+    - { object: '/lib/modules',                mask: '$(SEC_CONFIG)' }
+    - { object: '/etc/.pwd.lock',              mask: '$(SEC_CONFIG)' }
+#    - { object: '/lib/modules/preferred',      mask: '$(SEC_CONFIG) } #Uncomment when this file exists
+
+
+## These files change the behavior of the root account
+#
+# - rulename: "Root config files"
+#   severity: '100'
+#   content:
+#
+#    - { object: '/root/.viminfo,          exclude: yes }
+#    - { object: '/root/.bash_history,     exclude: yes }
+#    - { object: '/root',                  mask: '$(SEC_CRIT) } # Catch all additions to /root
+#    - { object: '/root/.bashrc',          mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/.bash_profile',    mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/.bash_logout',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/.cshrc',           mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/.tcshrc',          mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/Mail',             mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/mail',             mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/.amandahosts',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/.addressbook.lu',  mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/.addressbook',     mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/.elm',             mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/.gnome_private',   mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/.gnome-desktop',   mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/.mc',              mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/.pinerc',          mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/.sawfish',         mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/.xauth',           mask: '$(SEC_CONFIG)' }
+#    - { object: '/root/.xsession-errors', mask: '$(SEC_CONFIG)' }
+
+
+ # Critical configuration files.
+
+ - rulename: "Critical configuration files"
+   severity: '$(SIG_HI)'
+   content:
+
+    - { object: '/etc/crontab',        mask: '$(SEC_BIN)' }
+    - { object: '/etc/cron.hourly',    mask: '$(SEC_BIN)' }
+    - { object: '/etc/cron.daily',     mask: '$(SEC_BIN)' }
+    - { object: '/etc/cron.weekly',    mask: '$(SEC_BIN)' }
+    - { object: '/etc/cron.monthly',   mask: '$(SEC_BIN)' }
+    - { object: '/etc/default',        mask: '$(SEC_BIN)' }
+    - { object: '/etc/fstab',          mask: '$(SEC_BIN)' }
+    - { object: '/etc/exports',        mask: '$(SEC_BIN)' }
+    # changes should be infrequent
+    - { object: '/etc/group-',         mask: '$(SEC_BIN)' }
+    - { object: '/etc/host.conf',      mask: '$(SEC_BIN)' }
+    - { object: '/etc/hosts.allow',    mask: '$(SEC_BIN)' }
+    - { object: '/etc/hosts.deny',     mask: '$(SEC_BIN)' }
+    - { object: '/etc/protocols',      mask: '$(SEC_BIN)' }
+    - { object: '/etc/services',       mask: '$(SEC_BIN)' }
+    - { object: '/etc/rc.d/init.d',    mask: '$(SEC_BIN)' }
+    - { object: '/etc/rc.d',           mask: '$(SEC_BIN)' }
+    - { object: '/etc/mail.rc',        mask: '$(SEC_BIN)' }
+#    - { object: '/etc/modprobe.conf',  mask: '$(SEC_BIN) } # include this for 2.6 kernels
+    - { object: '/etc/motd.d',         mask: '$(SEC_BIN)' }
+    - { object: '/etc/passwd',         mask: '$(SEC_CONFIG)' }
+    - { object: '/etc/passwd-',        mask: '$(SEC_CONFIG)' }
+    - { object: '/etc/profile.d',      mask: '$(SEC_BIN)' }
+#    - { object: '/var/lib/nfs/rmtab',  mask: '$(SEC_BIN)' }
+    - { object: '/etc/rpc',            mask: '$(SEC_BIN)' }
+    - { object: '/etc/sysconfig',      mask: '$(SEC_BIN)' }
+#    - { object: '/etc/samba/smb.conf', mask: '$(SEC_CONFIG)' }
+#    - { object: '/etc/gettydefs',      mask: '$(SEC_BIN)' }
+    - { object: '/etc/nsswitch.conf',  mask: '$(SEC_BIN)' }
+    - { object: '/etc/hosts',          mask: '$(SEC_CONFIG)' }
+    - { object: '/etc/inittab',        mask: '$(SEC_CONFIG)' }
+    - { object: '/etc/resolv.conf',    mask: '$(SEC_CONFIG)' }
+
+
+ # Critical devices.
+
+ - rulename: "Critical devices"
+   severity: '$(SIG_HI),'
+   recurse: false
+   content:
+
+    - { object: '/dev/mem',          mask: '$(Device)' }
+    - { object: '/dev/null',         mask: '$(Device)' }
+    - { object: '/dev/zero',         mask: '$(Device)' }
+    - { object: '/proc/devices',     mask: '$(Device)' }
+    - { object: '/proc/net',         mask: '$(Device)' }
+    - { object: '/proc/sys',         mask: '$(Device)' }
+    - { object: '/proc/cpuinfo',     mask: '$(Device)' }
+    - { object: '/proc/modules',     mask: '$(Device)' }
+    - { object: '/proc/mounts',      mask: '$(Device)' }
+    - { object: '/proc/dma',         mask: '$(Device)' }
+    - { object: '/proc/filesystems', mask: '$(Device)' }
+    - { object: '/proc/interrupts',  mask: '$(Device)' }
+    - { object: '/proc/driver/rtc',  mask: '$(Device)' }
+    - { object: '/proc/ioports',     mask: '$(Device)' }
+    - { object: '/proc/scsi',        mask: '$(Device)' }
+    - { object: '/proc/kcore',       mask: '$(Device)' }
+    - { object: '/proc/self',        mask: '$(Device)' }
+    - { object: '/proc/kmsg',        mask: '$(Device)' }
+    - { object: '/proc/stat',        mask: '$(Device)' }
+    - { object: '/proc/loadavg',     mask: '$(Device)' }
+    - { object: '/proc/uptime',      mask: '$(Device)' }
+    - { object: '/proc/locks',       mask: '$(Device)' }
+    - { object: '/proc/version',     mask: '$(Device)' }
+    - { object: '/proc/mdstat',      mask: '$(Device)' }
+    - { object: '/proc/meminfo',     mask: '$(Device)' }
+    - { object: '/proc/cmdline',     mask: '$(Device)' }
+    - { object: '/proc/misc',        mask: '$(Device)' }
+
+
+ # Rest of critical system binaries
+
+ - rulename: "OS executables and libraries"
+   severity: '$(SIG_HI)'
+   content:
+
+    - { object: '/bin', mask: '$(SEC_BIN)' }
+    - { object: '/lib', mask: '$(SEC_BIN)' }

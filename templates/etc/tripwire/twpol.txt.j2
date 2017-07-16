@@ -1,0 +1,41 @@
+# identifier:   tripwire IDS policy input file
+# host:         Fedora Core release 1 (Yarrow)
+# version:      2.3.1-19.fdr.1
+# maintainer:   Keith G. Robertson-Turner <tripwire-devel[AT]genesis-x.nildram.co.uk>
+# validator:    unvalidated
+# date:         Tue Jun 15 17:09:21 BST 2004
+
+# Global Variable Definitions
+
+{% for section in tw_twpol_sections -%}
+@@section {{ section.name }}
+{% for entry in section.content -%}
+{{ entry.name }}={{ entry.value }};
+{% endfor %}
+
+
+{% endfor %}
+
+# Rules
+
+{% for section in tw_twpol_rules -%}
+(
+{% if section.emailto is defined %}  emailto = "{{ section.emailto }}",
+{% endif %}
+{% if section.recurse is defined %}  recurse = "{{ section.recurse }}",
+{% endif %}
+  rulename = "{{ section.rulename }}",
+  severity = {{ section.severity }}
+)
+{
+{% for rule in section.content -%}
+{% if rule.exclude | default(false) | bool %}
+    !{{ rule.object }} ;
+{% else %}
+    {{ rule.object }}                      -> {{ rule.mask }} {% if rule.attributes is defined %}({{ rule.attributes | join(', ') }}){% endif %};
+{% endif %}
+{% endfor %}
+}
+
+
+{% endfor %}

@@ -1,0 +1,101 @@
+---
+# # # # #  Tripwire  # # # # #
+
+- name: "Require Correct Linux Distribution"
+  assert:
+    that: ansible_distribution | lower in ['redhat', 'centos']
+    msg:  "This Linux distrution is not supported by the role."
+  tags: tripwire
+
+- name: "Run Tripwire Check"
+  command: "/etc/tripwire/tripwire-check.sh &"
+  ignore_errors: true
+  when: tripwire_run_first | bool and
+        tripwire_daily_check | bool
+  tags: tripwire
+
+- name: "Install Tripwire"
+  package:
+    name: "tripwire{% if tripwire_version not in ['', 'latest'] %}-{{ tripwire_version }}{% endif %}"
+    state: "{% if tripwire_version != 'latest' %}present{% else %}latest{% endif %}"
+  notify:
+   - Generate Tripwire Host Key
+   - Generate Tripwire Site Key
+  tags: tripwire
+
+- name: "Clean Existing Key"
+  file: path="{{ item }}" state=absent
+  when: tripwire_reset_keys | bool
+  with_items:
+   - "/etc/tripwire/{{ ansible_hostname }}-local.key"
+   - /etc/tripwire/site.key
+  notify:
+   - Generate Tripwire Host Key
+   - Generate Tripwire Site Key
+  tags: tripwire
+
+- name: "Generate Tripwire Keys"
+  command: /bin/true
+  when: tripwire_reset_keys | bool
+  notify:
+   - Generate Tripwire Host Key
+   - Generate Tripwire Site Key
+  tags: tripwire
+
+- name: "Clean Tripwire Shards Directory"
+  file: path=/etc/tripwire/ansible-shards state=absent
+  tags: tripwire
+
+- name: "Tripwire Shards Directory"
+  file: path=/etc/tripwire/ansible-shards state=directory mode='0755'
+  tags: tripwire
+
+- name: "Copy Configuration"
+  template:
+    src:   etc/tripwire/twcfg.txt.j2
+    dest:  /etc/tripwire/twcfg.txt
+    force: yes
+    mode:  '0644'
+  notify:
+   - Encrypt Tripwire Configuration
+  tags: tripwire
+
+- name: "Copy Policy"
+  template:
+    src:   etc/tripwire/twpol.txt.j2
+    dest:  /etc/tripwire/ansible-shards/0-twpol.txt
+    force: yes
+    mode:  '0644'
+  notify:
+   - Encrypt Tripwire Policy
+  tags: tripwire
+
+- name: "Copy Check Script"
+  template:
+    src:   etc/tripwire/tripwire-check.sh.j2
+    dest:  /etc/tripwire/tripwire-check.sh
+    force: yes
+    mode:  '0754'
+  tags: tripwire
+
+- name: "Assemble Tripwire Policy"
+  assemble:
+    src:   /etc/tripwire/ansible-shards
+    dest:  /etc/tripwire/twpol.txt
+    mode:  '0644'
+    force:  yes
+  tags: tripwire
+
+- name: "Scheduled Tripwire Check"
+  cron:
+    name:   tripwire-check
+    hour:   8
+    minute: 0
+    state:  "{% if tripwire_daily_check | bool %}present{% else %}absent{% endif %}"
+    user:   root
+    job:    "[ -f /etc/tripwire/tripwire-check.sh ] && /etc/tripwire/tripwire-check.sh"
+  tags: tripwire
+
+- name: "Remove Existing Scheduled Check"
+  file: path=/etc/cron.daily/tripwire-check state=absent
+  tags: tripwire
