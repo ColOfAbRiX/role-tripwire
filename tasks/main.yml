@@ -9,8 +9,9 @@
 
 - name: "Run Tripwire Check"
   command: "/etc/tripwire/tripwire-check.sh &"
+  changed_when: false
   ignore_errors: true
-  when: tripwire_run_first | bool and
+  when: tripwire_run_scan | bool and
         tripwire_daily_check | bool
   tags: tripwire
 
@@ -37,6 +38,7 @@
 - name: "Generate Tripwire Keys"
   command: /bin/true
   when: tripwire_reset_keys | bool
+  changed_when: false
   notify:
    - Generate Tripwire Host Key
    - Generate Tripwire Site Key
@@ -44,10 +46,12 @@
 
 - name: "Clean Tripwire Shards Directory"
   file: path=/etc/tripwire/ansible-shards state=absent
+  changed_when: false
   tags: tripwire
 
 - name: "Tripwire Shards Directory"
   file: path=/etc/tripwire/ansible-shards state=directory mode='0755'
+  changed_when: false
   tags: tripwire
 
 - name: "Copy Configuration"
@@ -98,4 +102,12 @@
 
 - name: "Remove Existing Scheduled Check"
   file: path=/etc/cron.daily/tripwire-check state=absent
+  tags: tripwire
+
+- name: "Initialize Database"
+  command: /bin/true
+  changed_when: false
+  notify:
+   - Tripwire Initial Database
+  when: tripwire_run_init | default(False) | bool
   tags: tripwire

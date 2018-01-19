@@ -10,7 +10,10 @@ tripwire_version: ''
 domain: example.com
 
 # If set it will run a check as first thing
-tripwire_run_first: true
+tripwire_run_scan: true
+
+# If set it will re-initialize the database
+tripwire_run_init: false
 
 # Tripwire Site Passphrase
 tripwire_site_password: Passw0rd

@@ -2,30 +2,35 @@
 
 - name: "Generate Tripwire Host Key"
   command: twadmin --generate-keys --local-keyfile "/etc/tripwire/{{ ansible_hostname }}-local.key" --local-passphrase "{{ tripwire_local_password }}"
+  changed_when: false
   notify:
    - Encrypt Tripwire Configuration
    - Tripwire Files Permissions
 
 - name: "Generate Tripwire Site Key"
   command: twadmin --generate-keys --site-keyfile "/etc/tripwire/site.key" --site-passphrase "{{ tripwire_site_password }}"
+  changed_when: false
   notify:
    - Encrypt Tripwire Policy
    - Tripwire Files Permissions
 
 - name: "Encrypt Tripwire Configuration"
   command: twadmin --create-cfgfile --site-keyfile "/etc/tripwire/site.key" --site-passphrase "{{ tripwire_site_password }}" /etc/tripwire/twcfg.txt
+  changed_when: false
   notify:
    - Tripwire Initial Database
    - Tripwire Files Permissions
 
 - name: "Encrypt Tripwire Policy"
   command: twadmin --create-polfile --site-passphrase "{{ tripwire_site_password }}" /etc/tripwire/twpol.txt
+  changed_when: false
   notify:
    - Tripwire Initial Database
    - Tripwire Files Permissions
 
 - name: "Tripwire Initial Database"
   shell: tripwire --init -P "{{ tripwire_local_password }}" &
+  changed_when: false
 
 - name: "Tripwire Files Permissions"
   file:
