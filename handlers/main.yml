@@ -1,40 +1,41 @@
 ---
 
 - name: "Generate Tripwire Host Key"
-  command: twadmin --generate-keys --local-keyfile "/etc/tripwire/{{ ansible_hostname }}-local.key" --local-passphrase "{{ tripwire_local_password }}"
-  changed_when: false
+  command: twadmin --generate-keys --local-keyfile {{ tw_local_key }} --local-passphrase '{{ tripwire_local_password }}'
+  no_log: true
   notify:
    - Encrypt Tripwire Configuration
    - Tripwire Files Permissions
 
 - name: "Generate Tripwire Site Key"
-  command: twadmin --generate-keys --site-keyfile "/etc/tripwire/site.key" --site-passphrase "{{ tripwire_site_password }}"
-  changed_when: false
+  command: twadmin --generate-keys --site-keyfile {{ tw_site_key }} --site-passphrase '{{ tripwire_site_password }}'
+  no_log: true
   notify:
    - Encrypt Tripwire Policy
    - Tripwire Files Permissions
 
 - name: "Encrypt Tripwire Configuration"
-  command: twadmin --create-cfgfile --site-keyfile "/etc/tripwire/site.key" --site-passphrase "{{ tripwire_site_password }}" /etc/tripwire/twcfg.txt
-  changed_when: false
+  command: twadmin --create-cfgfile --site-keyfile {{ tw_site_key }} --site-passphrase '{{ tripwire_site_password }}' {{ tw_config_file }}
+  no_log: true
   notify:
    - Tripwire Initial Database
    - Tripwire Files Permissions
 
 - name: "Encrypt Tripwire Policy"
-  command: twadmin --create-polfile --site-passphrase "{{ tripwire_site_password }}" /etc/tripwire/twpol.txt
-  changed_when: false
+  command: twadmin --create-polfile --site-passphrase '{{ tripwire_site_password }}' {{ tw_policy_file }}
+  no_log: true
   notify:
    - Tripwire Initial Database
    - Tripwire Files Permissions
 
 - name: "Tripwire Initial Database"
-  shell: tripwire --init -P "{{ tripwire_local_password }}" &
+  shell: tripwire --init -P '{{ tripwire_local_password }}' &
+  no_log: true
   changed_when: false
 
 - name: "Tripwire Files Permissions"
   file:
-    path:    /etc/tripwire/
+    path:    "{{ tripwire_config_dir }}"
     state:   directory
     recurse: yes
     owner:   root

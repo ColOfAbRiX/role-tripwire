@@ -6,9 +6,6 @@
 # - "<version>" to install a specific version
 tripwire_version: ''
 
-# Domain of the machines
-domain: example.com
-
 # If set it will run a check as first thing
 tripwire_run_scan: true
 
@@ -27,16 +24,19 @@ tripwire_daily_check: false
 # If set to true, the Tripwire keys will be cleared at every run
 tripwire_reset_keys: false
 
+# Configuration directory
+tripwire_config_dir: /etc/tripwire
+
 #
 # twcfg.txt
 #
 
 tw_twcfg_root:          '/usr/sbin'
-tw_twcfg_polfile:       '/etc/tripwire/tw.pol'
+tw_twcfg_polfile:       '{{ tripwire_config_dir }}/tw.pol'
 tw_twcfg_dbfile:        '/var/lib/tripwire/$(HOSTNAME).twd'
 tw_twcfg_reportfile:    '/var/lib/tripwire/report/$(HOSTNAME)-$(DATE).twr'
-tw_twcfg_sitekeyfile:   '/etc/tripwire/site.key'
-tw_twcfg_localkeyfile:  '/etc/tripwire/$(HOSTNAME)-local.key'
+tw_twcfg_sitekeyfile:   '{{ tripwire_config_dir }}/site.key'
+tw_twcfg_localkeyfile:  '{{ tripwire_config_dir }}/$(HOSTNAME)-local.key'
 tw_twcfg_editor:        '/bin/vim'
 tw_twcfg_lateprompting: 'false'
 tw_twcfg_loosedirectorychecking: false
@@ -46,7 +46,7 @@ tw_twcfg_reportlevel:   '3'
 tw_twcfg_mailmethod:    'SENDMAIL'
 tw_twcfg_syslogreporting: 'false'
 tw_twcfg_mailprogram:   '/usr/sbin/sendmail -oi -t'
-tw_twcfg_globalemail:   "admin@{{ domain }}"
+tw_twcfg_globalemail:   "tripwire@{{ ansible_fqdn }}"
 
 #
 # twpol.txt
@@ -60,10 +60,10 @@ tw_twpol_sections:
    content:
      - { name: 'TWROOT',   value: '/usr/sbin' }
      - { name: 'TWBIN',    value: '/usr/sbin' }
-     - { name: 'TWPOL',    value: '/etc/tripwire' }
+     - { name: 'TWPOL',    value: '{{ tripwire_config_dir }}' }
      - { name: 'TWDB',     value: '/var/lib/tripwire' }
-     - { name: 'TWSKEY',   value: '/etc/tripwire' }
-     - { name: 'TWLKEY',   value: '/etc/tripwire' }
+     - { name: 'TWSKEY',   value: '{{ tripwire_config_dir }}' }
+     - { name: 'TWLKEY',   value: '{{ tripwire_config_dir }}' }
      - { name: 'TWREPORT', value: '/var/lib/tripwire/report' }
      - { name: 'HOSTNAME', value: '{{ ansible_fqdn }}' }
 

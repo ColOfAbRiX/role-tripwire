@@ -7,104 +7,94 @@
     msg:  "This Linux distrution is not supported by the role."
   tags: tripwire
 
+- set_fact:
+    tw_local_key:    "{{ tripwire_config_dir }}/{{ ansible_hostname }}-local.key"
+    tw_site_key:     "{{ tripwire_config_dir }}/site.key"
+    tw_config_file:  "{{ tripwire_config_dir }}/twcfg.txt"
+    tw_policy_file:  "{{ tripwire_config_dir }}/twpol.txt"
+    tw_check_script: "{{ tripwire_config_dir }}/tripwire-check.sh"
+    tw_shards_path:  "{{ tripwire_config_dir }}/ansible-shards"
+  tags: tripwire
+
 - name: "Run Tripwire Check"
-  command: "/etc/tripwire/tripwire-check.sh &"
-  changed_when: false
-  ignore_errors: true
-  when: tripwire_run_scan | bool and
-        tripwire_daily_check | bool
+  shell: "[ -x {{ tw_check_script }} ] && {{ tw_check_script }} &"
+  when: tripwire_run_scan | default(True) | bool and
+        tripwire_daily_check | default(False) | bool
   tags: tripwire
 
 - name: "Install Tripwire"
   package:
     name: "tripwire{% if tripwire_version not in ['', 'latest'] %}-{{ tripwire_version }}{% endif %}"
     state: "{% if tripwire_version != 'latest' %}present{% else %}latest{% endif %}"
-  notify:
-   - Generate Tripwire Host Key
-   - Generate Tripwire Site Key
   tags: tripwire
+
 
 - name: "Clean Existing Key"
   file: path="{{ item }}" state=absent
-  when: tripwire_reset_keys | bool
+  when: tripwire_reset_keys | default(False) | bool
   with_items:
-   - "/etc/tripwire/{{ ansible_hostname }}-local.key"
-   - /etc/tripwire/site.key
-  notify:
-   - Generate Tripwire Host Key
-   - Generate Tripwire Site Key
+   - "{{ tw_local_key }}"
+   - "{{ tw_site_key }}"
   tags: tripwire
 
-- name: "Generate Tripwire Keys"
+- name: "Request Key Creation"
   command: /bin/true
-  when: tripwire_reset_keys | bool
-  changed_when: false
+  args:
+    creates: "{{ item.key }}"
   notify:
-   - Generate Tripwire Host Key
-   - Generate Tripwire Site Key
+   - "{{ item.handler }}"
+  with_items:
+   - { key: "{{ tw_local_key }}", handler: "Generate Tripwire Host Key" }
+   - { key: "{{ tw_site_key }}",  handler: "Generate Tripwire Site Key" }
   tags: tripwire
 
-- name: "Clean Tripwire Shards Directory"
-  file: path=/etc/tripwire/ansible-shards state=absent
-  changed_when: false
-  tags: tripwire
 
-- name: "Tripwire Shards Directory"
-  file: path=/etc/tripwire/ansible-shards state=directory mode='0755'
+- name: "Create Shards Directory"
+  file: path="{{ tw_shards_path }}" state=directory mode='0755'
   changed_when: false
   tags: tripwire
 
 - name: "Copy Configuration"
   template:
-    src:   etc/tripwire/twcfg.txt.j2
-    dest:  /etc/tripwire/twcfg.txt
+    src:   "etc/tripwire/{{ item.src }}.j2"
+    dest:  "{{ item.dst }}"
     force: yes
     mode:  '0644'
   notify:
-   - Encrypt Tripwire Configuration
-  tags: tripwire
-
-- name: "Copy Policy"
-  template:
-    src:   etc/tripwire/twpol.txt.j2
-    dest:  /etc/tripwire/ansible-shards/0-twpol.txt
-    force: yes
-    mode:  '0644'
-  notify:
-   - Encrypt Tripwire Policy
+   - "{{ item.handler }}"
+  with_items:
+   - { src: 'twcfg.txt', dst: "{{ tw_config_file }}",             handler: "Encrypt Tripwire Configuration" }
+   - { src: 'twpol.txt', dst: "{{ tw_shards_path }}/0-twpol.txt", handler: "Encrypt Tripwire Policy" }
   tags: tripwire
 
 - name: "Copy Check Script"
   template:
     src:   etc/tripwire/tripwire-check.sh.j2
-    dest:  /etc/tripwire/tripwire-check.sh
+    dest:  "{{ tw_check_script }}"
     force: yes
     mode:  '0754'
   tags: tripwire
 
-- name: "Assemble Tripwire Policy"
+- name: "Assemble Policy"
   assemble:
-    src:   /etc/tripwire/ansible-shards
-    dest:  /etc/tripwire/twpol.txt
+    src:   "{{ tw_shards_path }}"
+    dest:  "{{ tw_policy_file }}"
     mode:  '0644'
     force:  yes
   tags: tripwire
 
-- name: "Scheduled Tripwire Check"
+
+- name: "Schedule Daily Check"
   cron:
+    state:  "{% if tripwire_daily_check | default(False) | bool %}present{% else %}absent{% endif %}"
+    job:    "[ -x {{ tw_check_script }} ] && {{ tw_check_script }}"
     name:   tripwire-check
+    user:   root
     hour:   8
     minute: 0
-    state:  "{% if tripwire_daily_check | bool %}present{% else %}absent{% endif %}"
-    user:   root
-    job:    "[ -f /etc/tripwire/tripwire-check.sh ] && /etc/tripwire/tripwire-check.sh"
   tags: tripwire
 
-- name: "Remove Existing Scheduled Check"
-  file: path=/etc/cron.daily/tripwire-check state=absent
-  tags: tripwire
-
-- name: "Initialize Database"
+- name: "Request DB Init"
   command: /bin/true
   changed_when: false
   notify:

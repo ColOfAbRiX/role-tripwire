@@ -4,7 +4,7 @@
 # Fabrizio Colonna <colofabrix@tin.it> - 17/02/2016
 #
 
-DBFILE="$(sed -nre 's/^\s*DBFILE\s*=\s*(.*)$/\1/p' /etc/tripwire/twcfg.txt)"
+DBFILE="$(sed -nre 's/^\s*DBFILE\s*=\s*(.*)$/\1/p' {{ tripwire_config_dir }}/twcfg.txt)"
 DBFILE="$(echo "$DBFILE" | sed -re "s/\\$\(HOSTNAME\)/$(hostname)/")"
 
 if [ -e "$DBFILE" ] ; then
