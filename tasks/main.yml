@@ -96,7 +96,6 @@
 
 - name: "Request DB Init"
   command: /bin/true
-  changed_when: false
   notify:
    - Tripwire Initial Database
   when: tripwire_run_init | default(False) | bool

@@ -29,9 +29,10 @@
    - Tripwire Files Permissions
 
 - name: "Tripwire Initial Database"
-  shell: tripwire --init -P '{{ tripwire_local_password }}' &
+  shell: tripwire --init -P '{{ tripwire_local_password }}'
   no_log: true
-  changed_when: false
+  async: 300
+  poll: 0
 
 - name: "Tripwire Files Permissions"
   file:
